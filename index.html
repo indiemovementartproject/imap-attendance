@@ -63,18 +63,39 @@
     position:relative;
     display:flex;
     min-height:100vh;
-    background:
-      radial-gradient(900px 500px at 12% -5%, rgba(92,225,230,0.18), transparent 60%),
-      radial-gradient(800px 600px at 100% 110%, rgba(92,225,230,0.10), transparent 55%),
-      linear-gradient(160deg, var(--bg-0), var(--bg-1) 55%, var(--bg-2));
+    background:linear-gradient(160deg, var(--bg-0), var(--bg-1) 55%, var(--bg-2));
     overflow:hidden;
   }
-  /* ambient floating glow orbs */
-  #shell::before, #shell::after{
-    content:"";position:absolute;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:0;
+  /* animated background layer (sits behind all content) */
+  #bg-fx{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
+  /* a slow-shifting colour wash */
+  #bg-fx .wash{
+    position:absolute;inset:-20%;
+    background:
+      radial-gradient(900px 600px at 15% 20%, rgba(92,225,230,0.20), transparent 60%),
+      radial-gradient(800px 600px at 85% 80%, rgba(92,225,230,0.12), transparent 55%);
+    animation:washShift 24s ease-in-out infinite alternate;
   }
-  #shell::before{width:420px;height:420px;background:rgba(92,225,230,0.16);top:-120px;right:8%;}
-  #shell::after{width:360px;height:360px;background:rgba(92,225,230,0.10);bottom:-140px;left:20%;}
+  @keyframes washShift{
+    0%{transform:translate(0,0) scale(1);}
+    50%{transform:translate(3%,-2%) scale(1.08);}
+    100%{transform:translate(-3%,2%) scale(1.04);}
+  }
+  /* drifting blurred orbs */
+  .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.55;will-change:transform;}
+  .orb1{width:480px;height:480px;background:radial-gradient(circle, rgba(92,225,230,0.50), transparent 70%);top:-150px;left:-60px;animation:drift1 26s ease-in-out infinite alternate;}
+  .orb2{width:430px;height:430px;background:radial-gradient(circle, rgba(92,225,230,0.32), transparent 70%);bottom:-170px;right:-50px;animation:drift2 32s ease-in-out infinite alternate;}
+  .orb3{width:380px;height:380px;background:radial-gradient(circle, rgba(70,205,225,0.26), transparent 70%);top:42%;left:52%;animation:drift3 38s ease-in-out infinite alternate;}
+  @keyframes drift1{0%{transform:translate(0,0) scale(1);}100%{transform:translate(190px,130px) scale(1.25);}}
+  @keyframes drift2{0%{transform:translate(0,0) scale(1);}100%{transform:translate(-170px,-100px) scale(1.18);}}
+  @keyframes drift3{0%{transform:translate(0,0) scale(0.9);}50%{transform:translate(-130px,70px) scale(1.2);}100%{transform:translate(90px,-80px) scale(1);}}
+  /* glow that follows the cursor */
+  #cursor-glow{
+    position:fixed;top:0;left:0;width:600px;height:600px;margin:-300px 0 0 -300px;border-radius:50%;
+    background:radial-gradient(circle, rgba(92,225,230,0.22), rgba(92,225,230,0.08) 38%, transparent 66%);
+    pointer-events:none;z-index:5;mix-blend-mode:screen;
+    transform:translate3d(-1000px,-1000px,0);will-change:transform;opacity:0;transition:opacity .35s ease;
+  }
   #sidebar, #main{position:relative;z-index:1;}
 
   /* ---------- SIDEBAR ---------- */
@@ -278,7 +299,7 @@
   }
 
   input, select, textarea{font-size:16px;}
-  @media (prefers-reduced-motion: reduce){ #celebrate.show{animation:none;} #shell::before,#shell::after{display:none;} }
+  @media (prefers-reduced-motion: reduce){ #celebrate.show{animation:none;} .orb,#bg-fx .wash{animation:none;} #cursor-glow{display:none;} }
 
   @media (max-width: 780px){
     #shell{flex-direction:column;}
@@ -298,6 +319,13 @@
 </head>
 <body>
 <div id="shell">
+  <div id="bg-fx" aria-hidden="true">
+    <div class="wash"></div>
+    <div class="orb orb1"></div>
+    <div class="orb orb2"></div>
+    <div class="orb orb3"></div>
+  </div>
+  <div id="cursor-glow" aria-hidden="true"></div>
   <nav id="sidebar"></nav>
   <main id="main"></main>
 </div>
@@ -1401,6 +1429,28 @@ window.addEventListener('beforeunload', function(e){
 });
 
 init();
+
+/* ---- cursor-follow glow ---- */
+(function(){
+  const glow = document.getElementById('cursor-glow');
+  if(!glow) return;
+  const finePointer = window.matchMedia('(pointer:fine)').matches;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!finePointer || reduceMotion) return;   // skip on touch devices / reduced motion
+  let tx = window.innerWidth/2, ty = window.innerHeight/2, cx = tx, cy = ty, started = false;
+  function loop(){
+    cx += (tx - cx) * 0.14;  // easing → trailing "follow" feel
+    cy += (ty - cy) * 0.14;
+    glow.style.transform = 'translate3d('+cx.toFixed(1)+'px,'+cy.toFixed(1)+'px,0)';
+    requestAnimationFrame(loop);
+  }
+  window.addEventListener('mousemove', (e)=>{
+    tx = e.clientX; ty = e.clientY;
+    if(!started){ started = true; glow.style.opacity = '1'; loop(); }
+  });
+  window.addEventListener('mouseleave', ()=>{ glow.style.opacity = '0'; });
+  window.addEventListener('mouseenter', ()=>{ if(started) glow.style.opacity = '1'; });
+})();
 </script>
 </body>
 </html>
