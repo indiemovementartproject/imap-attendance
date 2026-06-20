@@ -133,6 +133,24 @@
     font-size:15px;line-height:1;transition:all .15s ease;
   }
   .nav-remove:hover{background:rgba(255,122,133,0.18);color:#fff;border-color:rgba(255,122,133,0.3);}
+  .nav-kebab{
+    flex-shrink:0;width:30px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--text-dim);
+    font-size:17px;line-height:1;letter-spacing:1px;transition:all .15s ease;
+  }
+  .nav-kebab:hover{background:var(--glass-strong);color:#fff;border-color:var(--glass-border);}
+  .batch-menu-backdrop{position:fixed;inset:0;z-index:115;background:transparent;}
+  .batch-menu{
+    position:fixed;min-width:168px;z-index:120;padding:6px;border-radius:12px;
+    background:rgba(10,30,36,0.97);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);
+    border:1px solid var(--glass-border-bright);box-shadow:0 18px 44px rgba(0,0,0,0.55), 0 0 22px -8px var(--brand-glow);
+  }
+  .batch-menu button{
+    display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;
+    color:var(--text);font-size:13.5px;font-weight:500;padding:9px 11px;border-radius:8px;transition:background .12s ease;
+  }
+  .batch-menu button:hover{background:var(--glass-strong);}
+  .batch-menu button.danger{color:var(--absent);}
+  .batch-menu button.danger:hover{background:rgba(255,122,133,0.16);}
   .nav-scroll{overflow-y:auto;flex:1;padding-right:2px;}
   #add-batch-btn{
     margin-top:10px;width:100%;padding:9px 12px;border-radius:11px;border:1px dashed var(--glass-border-bright);
@@ -459,7 +477,8 @@ let UI = {
   markDate: todayStr(),
   showArchivedStudents:false,
   showArchivedBatches:false,
-  modal:null, // {type:'addBatch'|'addStudent'|'editStudent'|'removeBatch'|'confirmLeave', payload}
+  modal:null, // {type:'addBatch'|'addStudent'|'editStudent'|'removeBatch'|'editBatch'|'confirmLeave', payload}
+  batchMenu:null, // {id, left, top} for the open batch ⋮ menu
   pendingAction:null,
   ovData:null, // computed overview cache
   ovLoading:false,
@@ -782,6 +801,36 @@ async function submitAddBatch(){
   closeModal();
 }
 
+/* ---- batch ⋮ menu ---- */
+function toggleBatchMenu(e, id){
+  if(UI.batchMenu && UI.batchMenu.id===id){ UI.batchMenu=null; render(); return; }
+  const r = e.currentTarget.getBoundingClientRect();
+  UI.batchMenu = { id, left: r.left, top: r.bottom };
+  render();
+}
+function closeBatchMenu(){ UI.batchMenu=null; render(); }
+function renderBatchMenu(){
+  if(!UI.batchMenu) return '';
+  const b = DB.batches.find(x=>x.id===UI.batchMenu.id);
+  if(!b) return '';
+  const left = Math.max(8, Math.min(UI.batchMenu.left, window.innerWidth - 184));
+  const top = UI.batchMenu.top + 4;
+  return `<div class="batch-menu-backdrop" onclick="closeBatchMenu()"></div>
+    <div class="batch-menu" style="left:${left}px;top:${top}px;">
+      <button onclick="closeBatchMenu(); openModal('editBatch', {id:'${b.id}'})">✎ Edit batch</button>
+      <button class="danger" onclick="closeBatchMenu(); openModal('removeBatch', {id:'${b.id}'})">🗑 Remove batch</button>
+    </div>`;
+}
+async function submitEditBatch(id){
+  const b = DB.batches.find(x=>x.id===id);
+  if(!b) return;
+  const name = document.getElementById('m-edit-batch-name').value.trim();
+  if(!name) return;
+  b.name = name;
+  await storeSet('batches', DB.batches);
+  closeModal();
+}
+
 async function confirmRemoveBatch(id){
   const b = DB.batches.find(x=>x.id===id);
   if(!b) return;
@@ -982,7 +1031,7 @@ function renderSidebar(){
       <button class="nav-item ${active?'active':''}" onclick="guardedSelectBatch('${b.id}')">
         <span>${escapeHtml(b.name)}</span><span class="count">${count}</span>
       </button>
-      <button class="nav-remove" title="Remove batch" onclick="event.stopPropagation();openModal('removeBatch',{id:'${b.id}'})">×</button>
+      <button class="nav-kebab" title="Batch options" onclick="event.stopPropagation();toggleBatchMenu(event,'${b.id}')">⋮</button>
     </div>`;
   }).join('');
 
@@ -1019,7 +1068,7 @@ function renderMain(){
   else if(UI.view==='dropins') body = renderDropins();
   else if(UI.view==='batch') body = renderBatch();
   else body = '';
-  return body + renderModal();
+  return body + renderModal() + renderBatchMenu();
 }
 
 /* ---------- OVERVIEW ---------- */
@@ -1324,6 +1373,20 @@ function renderModal(){
         <div class="modal-actions">
           <button class="btn secondary" onclick="closeModal()">Cancel</button>
           <button class="btn" onclick="submitAddBatch()">Add batch</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  if(type==='editBatch'){
+    const b = DB.batches.find(x=>x.id===payload.id);
+    if(!b) return '';
+    return `<div class="overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h3>Edit batch name</h3>
+        <div class="field"><label>Batch name</label><input id="m-edit-batch-name" type="text" value="${escapeHtml(b.name)}" autofocus/></div>
+        <div class="modal-actions">
+          <button class="btn secondary" onclick="closeModal()">Cancel</button>
+          <button class="btn" onclick="submitEditBatch('${b.id}')">Save</button>
         </div>
       </div>
     </div>`;
