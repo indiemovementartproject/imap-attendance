@@ -97,6 +97,23 @@
     transform:translate3d(-1000px,-1000px,0);will-change:transform;opacity:0;transition:opacity .35s ease;
   }
   #sidebar, #main{position:relative;z-index:1;}
+  #sidebar{transition:width .04s linear;}
+  /* draggable resize handle between sidebar and main */
+  #resize-handle{width:6px;flex-shrink:0;cursor:col-resize;background:transparent;position:relative;z-index:2;}
+  #resize-handle::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:38px;border-radius:2px;background:var(--glass-border);transition:background .15s ease,height .15s ease;}
+  #resize-handle:hover::after, #resize-handle.dragging::after{background:var(--brand);height:60px;box-shadow:0 0 10px var(--brand-glow);}
+  /* collapse button inside the sidebar header */
+  .collapse-btn{position:absolute;top:-2px;right:-2px;width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--text-dim);font-size:17px;line-height:1;transition:all .15s ease;}
+  .collapse-btn:hover{background:var(--glass-strong);color:#fff;border-color:var(--glass-border);}
+  /* floating heading shown when the panel is fully collapsed */
+  #collapsed-bar{display:none;position:fixed;top:12px;left:14px;z-index:40;align-items:center;gap:10px;
+    padding:7px 10px 7px 13px;border-radius:14px;background:var(--glass);
+    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+    border:1px solid var(--glass-border);box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,0.08);}
+  .expand-btn{width:30px;height:30px;border-radius:9px;border:1px solid var(--glass-border-bright);
+    background:var(--brand-glow-soft);color:var(--brand-bright);font-size:16px;font-weight:700;line-height:1;transition:all .15s ease;}
+  .expand-btn:hover{background:rgba(92,225,230,0.18);box-shadow:0 0 14px -5px var(--brand-glow);}
+  #shell.sidebar-collapsed #main{padding-top:74px;}
 
   /* ---------- SIDEBAR ---------- */
   #sidebar{
@@ -321,10 +338,14 @@
 
   @media (max-width: 780px){
     #shell{flex-direction:column;}
-    #sidebar{width:100%;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 12px;gap:8px;border-right:none;border-bottom:1px solid var(--glass-border);}
+    #sidebar{width:100%!important;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 12px;gap:8px;border-right:none;border-bottom:1px solid var(--glass-border);}
     .brand{display:flex;align-items:center;padding:0;border-bottom:none;margin:0;margin-right:4px;flex-shrink:0;}
     .brand img{max-width:78px!important;margin-bottom:0!important;}
     .brand .sub{display:none;}
+    .collapse-btn{display:none;}
+    #resize-handle{display:none!important;}
+    #collapsed-bar{display:none!important;}
+    #shell.sidebar-collapsed #main{padding-top:20px;}
     .nav-label{display:none;}
     .nav-scroll{display:flex;flex:none;overflow:visible;gap:6px;}
     .nav-item-row{flex-shrink:0;white-space:nowrap;}
@@ -345,7 +366,9 @@
   </div>
   <div id="cursor-glow" aria-hidden="true"></div>
   <nav id="sidebar"></nav>
+  <div id="resize-handle" title="Drag to resize"></div>
   <main id="main"></main>
+  <div id="collapsed-bar" aria-hidden="true"></div>
 </div>
 <div id="toast"></div>
 <div id="celebrate"></div>
@@ -1044,6 +1067,7 @@ function renderSidebar(){
 
   return `
     <div class="brand">
+      <button class="collapse-btn" title="Collapse panel" onclick="toggleSidebarCollapse()">«</button>
       <img src="${LOGO_DATA_URI}" alt="iMAP logo" style="width:100%;max-width:170px;display:block;margin-bottom:6px;"/>
       <div class="sub">Attendance</div>
     </div>
@@ -1514,6 +1538,87 @@ init();
   window.addEventListener('mouseleave', ()=>{ glow.style.opacity = '0'; });
   window.addEventListener('mouseenter', ()=>{ if(started) glow.style.opacity = '1'; });
 })();
+
+/* ---- resizable + collapsible sidebar (desktop only; per-device preference) ---- */
+let sidebarWidth = 252;
+let sidebarCollapsed = false;
+const SIDEBAR_MIN = 210, SIDEBAR_MAX = 380;
+
+function loadSidebarPrefs(){
+  try{
+    const w = parseInt(localStorage.getItem('imap:sidebarWidth'), 10);
+    if(!isNaN(w)) sidebarWidth = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, w));
+    sidebarCollapsed = localStorage.getItem('imap:sidebarCollapsed') === '1';
+  }catch(e){}
+}
+function saveSidebarPrefs(){
+  try{
+    localStorage.setItem('imap:sidebarWidth', String(sidebarWidth));
+    localStorage.setItem('imap:sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+  }catch(e){}
+}
+function collapsedBarHTML(){
+  return `<img src="${LOGO_DATA_URI}" alt="iMAP Attendance" style="height:30px;width:auto;filter:drop-shadow(0 0 8px rgba(92,225,230,0.45));"/>
+    <button class="expand-btn" title="Open menu" onclick="toggleSidebarCollapse()">»</button>`;
+}
+function applySidebarLayout(){
+  const shell = document.getElementById('shell');
+  const sb = document.getElementById('sidebar');
+  const handle = document.getElementById('resize-handle');
+  const bar = document.getElementById('collapsed-bar');
+  const isMobile = window.matchMedia('(max-width:780px)').matches;
+  if(isMobile){
+    shell.classList.remove('sidebar-collapsed');
+    if(sb){ sb.style.width=''; sb.style.display=''; }
+    if(handle) handle.style.display='none';
+    if(bar) bar.style.display='none';
+    return;
+  }
+  if(sidebarCollapsed){
+    shell.classList.add('sidebar-collapsed');
+    if(sb) sb.style.display='none';
+    if(handle) handle.style.display='none';
+    if(bar){ bar.innerHTML = collapsedBarHTML(); bar.style.display='flex'; }
+  } else {
+    shell.classList.remove('sidebar-collapsed');
+    if(sb){ sb.style.display=''; sb.style.width = sidebarWidth+'px'; }
+    if(handle) handle.style.display='';
+    if(bar) bar.style.display='none';
+  }
+}
+function toggleSidebarCollapse(){
+  sidebarCollapsed = !sidebarCollapsed;
+  saveSidebarPrefs();
+  applySidebarLayout();
+}
+function initSidebarResize(){
+  const handle = document.getElementById('resize-handle');
+  if(!handle) return;
+  let dragging = false;
+  handle.addEventListener('mousedown', (e)=>{
+    if(window.matchMedia('(max-width:780px)').matches) return;
+    dragging = true; handle.classList.add('dragging');
+    document.body.style.cursor='col-resize'; document.body.style.userSelect='none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e)=>{
+    if(!dragging) return;
+    sidebarWidth = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, e.clientX));
+    const sb = document.getElementById('sidebar');
+    if(sb) sb.style.width = sidebarWidth+'px';
+  });
+  window.addEventListener('mouseup', ()=>{
+    if(!dragging) return;
+    dragging = false; handle.classList.remove('dragging');
+    document.body.style.cursor=''; document.body.style.userSelect='';
+    saveSidebarPrefs();
+  });
+}
+
+loadSidebarPrefs();
+applySidebarLayout();
+initSidebarResize();
+window.addEventListener('resize', applySidebarLayout);
 </script>
 </body>
 </html>
